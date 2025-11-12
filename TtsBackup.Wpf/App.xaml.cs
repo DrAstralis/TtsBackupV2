@@ -2,6 +2,8 @@ using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using TtsBackup.Core.Services;
+using TtsBackup.Infrastructure.Services;
 using TtsBackup.Wpf.ViewModels;
 
 namespace TtsBackup.Wpf;
@@ -22,8 +24,13 @@ public partial class App : Application
             })
             .ConfigureServices((context, services) =>
             {
-                // TODO: register Core and Infrastructure services in later passes.
+                // Core/Infra services
+                services.AddSingleton<ISettingsService, SettingsService>();
+                services.AddSingleton<IDiskSpaceService, DiskSpaceService>();
+                services.AddSingleton<ISaveParser, SaveParser>();
+                services.AddSingleton<IObjectTreeService, ObjectTreeService>();
 
+                // ViewModels + UI
                 services.AddSingleton<MainWindowViewModel>();
                 services.AddSingleton<MainWindow>();
             })

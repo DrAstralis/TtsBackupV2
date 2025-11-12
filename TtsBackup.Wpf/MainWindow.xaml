@@ -3,20 +3,52 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:TtsBackup.Wpf"
         xmlns:vm="clr-namespace:TtsBackup.Wpf.ViewModels"
         mc:Ignorable="d"
         Title="TTS Asset Backup" Height="600" Width="1000">
     <Window.DataContext>
+        <!-- DI will replace this instance; this keeps design-time happy -->
         <vm:MainWindowViewModel />
     </Window.DataContext>
 
-    <Grid>
-        <!-- Pass 1: empty shell; we’ll build out tree / panels in later passes -->
-        <TextBlock Text="TTS Backup Tool (shell)"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   FontSize="24"
-                   FontWeight="Bold"/>
-    </Grid>
+    <DockPanel>
+        <!-- Top bar -->
+        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="8">
+            <Button Content="Open Save..."
+                    Width="120"
+                    Margin="0,0,8,0"
+                    Click="OpenSave_Click" />
+            <TextBlock Text="{Binding StatusText}"
+                       VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Main content -->
+        <Grid Margin="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="2*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: object tree -->
+            <Border BorderBrush="Gray" BorderThickness="1" Padding="4" Margin="0,0,8,0">
+                <TreeView ItemsSource="{Binding RootNodes}">
+                    <TreeView.ItemTemplate>
+                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DisplayName}" />
+                            </StackPanel>
+                        </HierarchicalDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </Border>
+
+            <!-- Right: simple info for now -->
+            <StackPanel Grid.Column="1">
+                <TextBlock Text="Selection summary (placeholder for Phase 3+)"
+                           FontWeight="Bold"
+                           Margin="0,0,0,8" />
+                <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap" />
+            </StackPanel>
+        </Grid>
+    </DockPanel>
 </Window>
