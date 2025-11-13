@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TtsBackup.Core.Models;
 using TtsBackup.Core.Services;
 
@@ -11,79 +12,75 @@ public sealed class SaveParser : ISaveParser
         if (string.IsNullOrWhiteSpace(json))
             throw new ArgumentException("JSON is empty.", nameof(json));
 
-        using var doc = JsonDocument.Parse(json);
+        var originalJson = json;
 
-        var root = doc.RootElement;
+        using var stringReader = new StringReader(originalJson);
+        using var jsonReader = new JsonTextReader(stringReader);
 
-        if (!root.TryGetProperty("ObjectStates", out var objectStates) || objectStates.ValueKind != JsonValueKind.Array)
+        var rootToken = JToken.ReadFrom(jsonReader);
+        if (rootToken is not JObject rootObj)
         {
-            // Still return something, but empty roots.
-            var empty = new SaveDocument(json, Array.Empty<ObjectNode>(), OriginalName: null);
-            return Task.FromResult(empty);
+            return Task.FromResult(new SaveDocument(originalJson, Array.Empty<ObjectNode>(), null));
         }
 
-        var nodes = new List<ObjectNode>();
+        var roots = new List<ObjectNode>();
 
-        foreach (var obj in objectStates.EnumerateArray())
+        if (rootObj["ObjectStates"] is JArray objectStatesArray)
         {
-            var node = BuildNode(obj);
-            nodes.Add(node);
+            foreach (var objToken in objectStatesArray)
+            {
+                if (objToken is JObject obj)
+                {
+                    roots.Add(BuildNode(obj));
+                }
+            }
         }
 
         string? saveName = null;
-        if (root.TryGetProperty("SaveName", out var saveNameProp) && saveNameProp.ValueKind == JsonValueKind.String)
+        if (rootObj["SaveName"] is JValue nameVal && nameVal.Type == JTokenType.String)
         {
-            saveName = saveNameProp.GetString();
+            saveName = (string?)nameVal;
         }
 
-        var save = new SaveDocument(json, nodes, saveName);
-        return Task.FromResult(save);
+        return Task.FromResult(new SaveDocument(originalJson, roots, saveName));
     }
 
-    private static ObjectNode BuildNode(JsonElement element)
+    private static ObjectNode BuildNode(JObject obj)
     {
-        var guid = element.TryGetProperty("GUID", out var guidProp) && guidProp.ValueKind == JsonValueKind.String
-            ? guidProp.GetString() ?? string.Empty
-            : string.Empty;
+        var guid = (string?)obj["GUID"] ?? string.Empty;
 
-        var name = element.TryGetProperty("Nickname", out var nicknameProp) && nicknameProp.ValueKind == JsonValueKind.String
-            ? nicknameProp.GetString() ?? string.Empty
-            : element.TryGetProperty("Name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
-                ? nameProp.GetString() ?? string.Empty
-                : string.Empty;
+        var nickname = (string?)obj["Nickname"];
+        var nameField = (string?)obj["Name"];
+        var name = !string.IsNullOrWhiteSpace(nickname) ? nickname! : nameField ?? string.Empty;
 
-        var type = element.TryGetProperty("Name", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
-            ? typeProp.GetString() ?? string.Empty
-            : string.Empty;
+        var type = nameField ?? string.Empty;
 
-        bool hasStates = element.TryGetProperty("States", out var statesProp) &&
-                         (statesProp.ValueKind == JsonValueKind.Object || statesProp.ValueKind == JsonValueKind.Array);
+        var hasStates = obj["States"] is JObject or JArray;
 
         var children = new List<ObjectNode>();
 
-        // ContainedObjects: array of more ObjectStates
-        if (element.TryGetProperty("ContainedObjects", out var containedObjectsProp) &&
-            containedObjectsProp.ValueKind == JsonValueKind.Array)
+        if (obj["ContainedObjects"] is JArray containedArray)
         {
-            foreach (var child in containedObjectsProp.EnumerateArray())
+            foreach (var childToken in containedArray)
             {
-                var childNode = BuildNode(child);
-                children.Add(childNode);
+                if (childToken is JObject childObj)
+                {
+                    children.Add(BuildNode(childObj));
+                }
             }
         }
 
-        // States: dictionary-like object with numbered keys ("1", "2", ...)
-        if (element.TryGetProperty("States", out var statesElement) &&
-            statesElement.ValueKind == JsonValueKind.Object)
+        if (obj["States"] is JObject statesObj)
         {
-            foreach (var prop in statesElement.EnumerateObject())
+            foreach (var prop in statesObj.Properties())
             {
-                var stateNode = BuildNode(prop.Value);
-                children.Add(stateNode);
+                if (prop.Value is JObject stateObj)
+                {
+                    children.Add(BuildNode(stateObj));
+                }
             }
         }
 
-        // For now we don't inspect asset fields; HasOwnAssets stays false.
         return new ObjectNode
         {
             Guid = guid,
