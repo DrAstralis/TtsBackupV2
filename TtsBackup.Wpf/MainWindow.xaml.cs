@@ -42,7 +42,7 @@ public partial class MainWindow : Window
             var doc = await _saveParser.ParseAsync(json);
             var tree = _treeService.BuildTree(doc);
 
-            _viewModel.LoadDocument(dialog.FileName, doc, tree);
+            await _viewModel.LoadDocumentAsync(dialog.FileName, doc, tree);
             _viewModel.StatusText = "Save loaded.";
         }
         catch (Exception ex)

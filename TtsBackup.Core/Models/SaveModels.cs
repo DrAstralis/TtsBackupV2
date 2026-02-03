@@ -32,11 +32,9 @@ public sealed class ObjectNode
     /// </summary>
     public bool IsState { get; init; }
 
-
     /// <summary>
     /// Indicates whether this node actually has any asset URLs of its own.
     /// Children may still have.
     /// </summary>
     public bool HasOwnAssets { get; init; }
-
 }

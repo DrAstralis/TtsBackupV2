@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
@@ -7,6 +7,8 @@ namespace TtsBackup.Wpf.ViewModels;
 public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
 {
     private bool? _isChecked = false;
+    private int _ownUrlCount;
+    private int _anyUrlCount;
 
     public ObjectTreeNodeViewModel(ObjectTreeNodeViewModel? parent = null)
     {
@@ -20,9 +22,6 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
     public string Type { get; set; } = string.Empty;
     public bool HasStates { get; set; }
     public string JsonPath { get; set; } = string.Empty;
-    private int _ownUrlCount;
-    private int _anyUrlCount;
-
 
     /// <summary>
     /// True if this node is a TTS "state" object or is contained under a state object.
@@ -66,7 +65,6 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
 
     public bool HasOwnUrls => OwnUrlCount > 0;
     public bool HasAnyUrls => AnyUrlCount > 0;
-
 
     /// <summary>
     /// Tri-state checkbox: true = selected, false = not selected, null = partially selected.
