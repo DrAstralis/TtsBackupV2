@@ -27,11 +27,11 @@ public sealed class SaveParser : ISaveParser
 
         if (rootObj["ObjectStates"] is JArray objectStatesArray)
         {
-            foreach (var objToken in objectStatesArray)
+            for (var i = 0; i < objectStatesArray.Count; i++)
             {
-                if (objToken is JObject obj)
+                if (objectStatesArray[i] is JObject obj)
                 {
-                    roots.Add(BuildNode(obj));
+                    roots.Add(BuildNode(obj, $"$.ObjectStates[{i}]", isState: false));
                 }
             }
         }
@@ -45,7 +45,7 @@ public sealed class SaveParser : ISaveParser
         return Task.FromResult(new SaveDocument(originalJson, roots, saveName));
     }
 
-    private static ObjectNode BuildNode(JObject obj)
+    private static ObjectNode BuildNode(JObject obj, string jsonPath, bool isState)
     {
         var guid = (string?)obj["GUID"] ?? string.Empty;
 
@@ -61,11 +61,11 @@ public sealed class SaveParser : ISaveParser
 
         if (obj["ContainedObjects"] is JArray containedArray)
         {
-            foreach (var childToken in containedArray)
+            for (var i = 0; i < containedArray.Count; i++)
             {
-                if (childToken is JObject childObj)
+                if (containedArray[i] is JObject childObj)
                 {
-                    children.Add(BuildNode(childObj));
+                    children.Add(BuildNode(childObj, $"{jsonPath}.ContainedObjects[{i}]", isState: false));
                 }
             }
         }
@@ -76,7 +76,20 @@ public sealed class SaveParser : ISaveParser
             {
                 if (prop.Value is JObject stateObj)
                 {
-                    children.Add(BuildNode(stateObj));
+                    // State objects should be shown in the tree, but are not independently selectable in Phase 3.
+                    children.Add(BuildNode(stateObj, $"{jsonPath}.States.{prop.Name}", isState: true));
+                }
+            }
+        }
+
+        // Some saves contain nested ObjectStates inside an object (including inside state objects).
+        if (obj["ObjectStates"] is JArray nestedObjectStates)
+        {
+            for (var i = 0; i < nestedObjectStates.Count; i++)
+            {
+                if (nestedObjectStates[i] is JObject nestedObj)
+                {
+                    children.Add(BuildNode(nestedObj, $"{jsonPath}.ObjectStates[{i}]", isState: false));
                 }
             }
         }
@@ -88,6 +101,8 @@ public sealed class SaveParser : ISaveParser
             Type = type,
             HasStates = hasStates,
             Children = children,
+            JsonPath = jsonPath,
+            IsState = isState,
             HasOwnAssets = false
         };
     }

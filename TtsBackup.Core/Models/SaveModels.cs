@@ -22,8 +22,21 @@ public sealed class ObjectNode
     public IReadOnlyList<ObjectNode> Children { get; init; } = Array.Empty<ObjectNode>();
 
     /// <summary>
+    /// JSONPath pointing to this object's JObject inside the original save JSON.
+    /// Used for surgical patching in later phases.
+    /// </summary>
+    public string JsonPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// True if this node represents a TTS "state" object (i.e., came from parent.States.*).
+    /// </summary>
+    public bool IsState { get; init; }
+
+
+    /// <summary>
     /// Indicates whether this node actually has any asset URLs of its own.
     /// Children may still have.
     /// </summary>
     public bool HasOwnAssets { get; init; }
+
 }
