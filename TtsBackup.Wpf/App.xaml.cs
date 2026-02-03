@@ -29,6 +29,7 @@ public partial class App : Application
                 services.AddSingleton<IDiskSpaceService, DiskSpaceService>();
                 services.AddSingleton<ISaveParser, SaveParser>();
                 services.AddSingleton<IObjectTreeService, ObjectTreeService>();
+                services.AddSingleton<IAssetScanner, AssetScanner>();
 
                 // ViewModels + UI
                 services.AddSingleton<MainWindowViewModel>();

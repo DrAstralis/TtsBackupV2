@@ -7,7 +7,8 @@ namespace TtsBackup.Core.Services;
 /// </summary>
 public interface IAssetScanner
 {
-    IReadOnlyList<AssetReference> ScanAssets(
+    Task<IReadOnlyList<AssetReference>> ScanAssetsAsync(
         SaveDocument document,
-        SelectionSnapshot selection);
+        SelectionSnapshot selection,
+        CancellationToken cancellationToken = default);
 }

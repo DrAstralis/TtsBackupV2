@@ -1,26 +1,33 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
 using System.Windows;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using TtsBackup.Core.Models;
+using TtsBackup.Core.Services;
 
 namespace TtsBackup.Wpf.ViewModels;
 
-public class MainWindowViewModel : INotifyPropertyChanged
+public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
-    private static readonly Regex UrlRegex = new Regex(
-    "https?://[^\\s\"'<>]+",
-    RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
+    private readonly IAssetScanner _assetScanner;
 
     private string _title = "TTS Asset Backup";
     private string _statusText = "Ready.";
     private string _summaryText = "Open a TTS save file to see its objects.";
-    private string _urlSummaryText = string.Empty;
+    
+    private int _assetTotal;
+    private int _assetInvalid;
+    private int _assetLocal;
+    private int _assetMissingFilename;
+private string _urlSummaryText = string.Empty;
+
+    public MainWindowViewModel(IAssetScanner assetScanner)
+    {
+        _assetScanner = assetScanner;
+    }
+
+    public ObservableCollection<ObjectTreeNodeViewModel> RootNodes { get; } = new();
 
     public string Title
     {
@@ -47,7 +54,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
     public string SummaryText
     {
         get => _summaryText;
-        set
+        private set
         {
             if (_summaryText == value) return;
             _summaryText = value;
@@ -58,7 +65,7 @@ public class MainWindowViewModel : INotifyPropertyChanged
     public string UrlSummaryText
     {
         get => _urlSummaryText;
-        set
+        private set
         {
             if (_urlSummaryText == value) return;
             _urlSummaryText = value;
@@ -66,7 +73,63 @@ public class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public ObservableCollection<ObjectTreeNodeViewModel> RootNodes { get; } = new();
+    public int AssetTotal
+    {
+        get => _assetTotal;
+        private set
+        {
+            if (_assetTotal == value) return;
+            _assetTotal = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AssetScanOk));
+            OnPropertyChanged(nameof(AssetScanHasWarnings));
+        }
+    }
+
+    public int AssetInvalid
+    {
+        get => _assetInvalid;
+        private set
+        {
+            if (_assetInvalid == value) return;
+            _assetInvalid = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AssetScanOk));
+            OnPropertyChanged(nameof(AssetScanHasWarnings));
+        }
+    }
+
+    public int AssetLocal
+    {
+        get => _assetLocal;
+        private set
+        {
+            if (_assetLocal == value) return;
+            _assetLocal = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AssetScanOk));
+            OnPropertyChanged(nameof(AssetScanHasWarnings));
+        }
+    }
+
+    public int AssetMissingFilename
+    {
+        get => _assetMissingFilename;
+        private set
+        {
+            if (_assetMissingFilename == value) return;
+            _assetMissingFilename = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AssetScanOk));
+            OnPropertyChanged(nameof(AssetScanHasWarnings));
+        }
+    }
+
+    public bool AssetScanOk => AssetTotal > 0 && AssetInvalid == 0 && AssetLocal == 0 && AssetMissingFilename == 0;
+
+    public bool AssetScanHasWarnings => AssetTotal > 0 && !AssetScanOk;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public async Task LoadDocumentAsync(string path, SaveDocument document, IReadOnlyList<ObjectNode> tree)
     {
@@ -83,204 +146,124 @@ public class MainWindowViewModel : INotifyPropertyChanged
         Title = $"TTS Asset Backup - {System.IO.Path.GetFileName(path)}";
         SummaryText = $"Objects in save: {totalObjects}. Select objects using the checkboxes.";
 
-        // Scan for URLs immediately on load (no 'Scan' button).
-        // This runs off-thread to avoid freezing the UI on large saves.
-        StatusText = "Scanning for URLs...";
-        UrlSummaryText = "Scanning for URLs...";
-        await ScanUrlsAndApplyAsync(document.RawJson);
+        // Phase 3: asset scan runs off-thread via IAssetScanner to keep UI responsive.
+        StatusText = "Scanning for assets...";
+        UrlSummaryText = "Scanning for assets...";
+        await ScanAssetsAndApplyAsync(document);
         StatusText = "Save loaded.";
     }
 
-    private async Task ScanUrlsAndApplyAsync(string rawJson)
+    private async Task ScanAssetsAndApplyAsync(SaveDocument document)
     {
-        // 1) Parse the root token once using JsonTextReader (Infinity-safe).
-        // 2) For each node VM, compute OwnUrlCount by scanning the token for URLs,
-        //    excluding big child containers so parent nodes don't light up just because
-        //    their children have URLs.
-        // 3) Compute AnyUrlCount bottom-up: OwnUrlCount + sum(child.AnyUrlCount).
-
-        Dictionary<string, int> ownCounts;
-
+        IReadOnlyList<AssetReference> assets;
         try
         {
-            ownCounts = await Task.Run(() =>
-            {
-                using var sr = new StringReader(rawJson);
-                using var reader = new JsonTextReader(sr);
-                var root = JToken.ReadFrom(reader);
-
-                var map = new Dictionary<string, int>(StringComparer.Ordinal);
-                foreach (var node in Flatten(RootNodes))
-                {
-                    var path = NormalizeJsonPathForSelectToken(node.JsonPath);
-                    var token = root.SelectToken(path, errorWhenNoMatch: false);
-                    map[node.JsonPath] = CountUrlsInOwnFields(token);
-                }
-
-                return map;
-            });
+            // Empty selection snapshot means "scan everything" for analysis (see AssetScanner).
+            assets = await _assetScanner.ScanAssetsAsync(document, new SelectionSnapshot(), CancellationToken.None);
         }
         catch (Exception ex)
         {
-            // Don't block the app if scanning fails; just surface a message.
-            UrlSummaryText = $"URL scan failed: {ex.Message}";
+            UrlSummaryText = $"Asset scan failed: {ex.Message}";
             return;
         }
 
-        // Apply results on UI thread.
+        var ownByGuid = assets
+            .GroupBy(a => a.SourceObjectGuid)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+        // Apply on UI thread.
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            foreach (var node in Flatten(RootNodes))
-            {
-                if (ownCounts.TryGetValue(node.JsonPath, out var count))
-                {
-                    node.OwnUrlCount = count;
-                }
-            }
-
-            // Compute AnyUrlCount bottom-up.
             foreach (var root in RootNodes)
             {
-                ComputeAggregateCounts(root);
+                ApplyOwnCountsRecursive(root, ownByGuid);
+                ComputeAnyCountsRecursive(root);
             }
 
-            var totalUrls = 0;
-            foreach (var root in RootNodes)
-            {
-                totalUrls += root.AnyUrlCount;
-            }
+            AssetTotal = assets.Count;
+            AssetLocal = assets.Count(a => LooksLikeLocalPath(a.OriginalUrl));
+            AssetInvalid = assets.Count(a => IsInvalidUrl(a.OriginalUrl));
+            AssetMissingFilename = assets.Count(a => IsMissingFilename(a.OriginalUrl));
 
-            UrlSummaryText = $"Total URLs found in save: {totalUrls}.";
+            UrlSummaryText = $"Assets found: {AssetTotal} (invalid: {AssetInvalid}, local paths: {AssetLocal}, missing filenames: {AssetMissingFilename})";
         });
     }
 
-    private static int ComputeAggregateCounts(ObjectTreeNodeViewModel node)
+    private static void ApplyOwnCountsRecursive(ObjectTreeNodeViewModel node, Dictionary<string, int> ownByGuid)
+    {
+        node.OwnUrlCount = ownByGuid.TryGetValue(node.Guid, out var c) ? c : 0;
+
+        foreach (var child in node.Children)
+            ApplyOwnCountsRecursive(child, ownByGuid);
+    }
+
+    private static int ComputeAnyCountsRecursive(ObjectTreeNodeViewModel node)
     {
         var sum = node.OwnUrlCount;
         foreach (var child in node.Children)
-        {
-            sum += ComputeAggregateCounts(child);
-        }
+            sum += ComputeAnyCountsRecursive(child);
+
         node.AnyUrlCount = sum;
         return sum;
     }
 
-    private static IEnumerable<ObjectTreeNodeViewModel> Flatten(IEnumerable<ObjectTreeNodeViewModel> roots)
+    private static bool LooksLikeLocalPath(string value)
     {
-        var stack = new Stack<ObjectTreeNodeViewModel>(roots.Reverse());
-        while (stack.Count > 0)
-        {
-            var n = stack.Pop();
-            yield return n;
-            for (var i = n.Children.Count - 1; i >= 0; i--)
-            {
-                stack.Push(n.Children[i]);
-            }
-        }
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        // Windows absolute drive path or UNC.
+        if (value.Length >= 3 && char.IsLetter(value[0]) && value[1] == ':' && (value[2] == '\\' || value[2] == '/'))
+            return true;
+
+        if (value.StartsWith("\\\\", StringComparison.Ordinal))
+            return true;
+
+        return value.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string NormalizeJsonPathForSelectToken(string jsonPath)
+    private static bool IsInvalidUrl(string value)
     {
-        // Newtonsoft's SelectToken can be picky about numeric property names (e.g., States."1").
-        // We build paths like: $.ObjectStates[0].States.1
-        // Normalize to:        $.ObjectStates[0].States['1']
-        if (string.IsNullOrWhiteSpace(jsonPath)) return jsonPath;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        if (LooksLikeLocalPath(value)) return false;
 
-        // Replace occurrences of ".States.<digits>" with ".States['<digits>']".
-        return Regex.Replace(
-            jsonPath,
-            @"\.States\.(\d+)(?=\b|\.|\[|$)",
-            m => $".States['{m.Groups[1].Value}']",
-            RegexOptions.CultureInvariant);
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)) return true;
+        return uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps;
     }
 
-    private static int CountUrlsInOwnFields(JToken? token)
+    private static bool IsMissingFilename(string value)
     {
-        if (token is null) return 0;
-        return CountUrlsRecursive(token);
-    }
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
 
-    private static int CountUrlsRecursive(JToken token)
-    {
-        // Exclude large child containers so "parent contains URLs" is meaningful.
-        if (token is JObject obj)
-        {
-            var count = 0;
-            foreach (var prop in obj.Properties())
-            {
-                var name = prop.Name;
-                if (name.Equals("ContainedObjects", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("States", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("ObjectStates", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
+        var path = uri.AbsolutePath;
+        if (string.IsNullOrWhiteSpace(path) || path.EndsWith('/')) return true;
 
-                count += CountUrlsRecursive(prop.Value);
-            }
-            return count;
-        }
+        var last = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        if (string.IsNullOrWhiteSpace(last)) return true;
 
-        if (token is JArray arr)
-        {
-            var count = 0;
-            foreach (var item in arr)
-            {
-                count += CountUrlsRecursive(item);
-            }
-            return count;
-        }
-
-        if (token is JValue val && val.Type == JTokenType.String)
-        {
-            var s = (string?)val.Value;
-            if (string.IsNullOrWhiteSpace(s)) return 0;
-            return UrlRegex.Matches(s).Count;
-        }
-
-        return 0;
-    }
-
-    private static int CountNodes(IReadOnlyList<ObjectNode> nodes)
-    {
-        var count = 0;
-        foreach (var node in nodes)
-        {
-            count++;
-            if (node.Children.Count > 0)
-            {
-                count += CountNodes(node.Children);
-            }
-        }
-        return count;
+        // If there's no dot, it's often an ID route or extensionless asset.
+        return !last.Contains('.');
     }
 
     private void RecomputeSelectionSummary()
     {
-        var total = 0;
+        // Minimal: show how many objects are fully selected.
         var selected = 0;
-        var partial = 0;
 
-        foreach (var root in RootNodes)
+        void Walk(ObjectTreeNodeViewModel n)
         {
-            CountVm(root, ref total, ref selected, ref partial);
+            if (n.IsChecked == true && !n.IsSelectionLocked)
+                selected++;
+
+            foreach (var c in n.Children)
+                Walk(c);
         }
 
-        SummaryText = partial > 0
-            ? $"Selected objects: {selected} / {total} (plus {partial} partial branches)."
-            : $"Selected objects: {selected} / {total}.";
-    }
+        foreach (var r in RootNodes)
+            Walk(r);
 
-    private static void CountVm(ObjectTreeNodeViewModel node, ref int total, ref int selected, ref int partial)
-    {
-        total++;
-        if (node.IsChecked == true) selected++;
-        else if (node.IsChecked == null) partial++;
-
-        foreach (var child in node.Children)
-        {
-            CountVm(child, ref total, ref selected, ref partial);
-        }
+        SummaryText = $"Selected objects: {selected}."; 
     }
 
     private void WireNode(ObjectTreeNodeViewModel node)
@@ -294,14 +277,12 @@ public class MainWindowViewModel : INotifyPropertyChanged
         };
 
         foreach (var child in node.Children)
-        {
             WireNode(child);
-        }
     }
 
     private static ObjectTreeNodeViewModel ConvertNode(ObjectNode node, ObjectTreeNodeViewModel? parent, bool ancestorLocked)
     {
-        var locked = ancestorLocked || node.IsState;
+        var isLocked = ancestorLocked || node.IsState;
 
         var vm = new ObjectTreeNodeViewModel(parent)
         {
@@ -310,19 +291,29 @@ public class MainWindowViewModel : INotifyPropertyChanged
             Type = node.Type,
             HasStates = node.HasStates,
             JsonPath = node.JsonPath,
-            IsSelectionLocked = locked
+            IsSelectionLocked = isLocked
         };
 
         foreach (var child in node.Children)
         {
-            vm.Children.Add(ConvertNode(child, vm, locked));
+            vm.Children.Add(ConvertNode(child, vm, isLocked));
         }
 
         return vm;
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
+    private static int CountNodes(IReadOnlyList<ObjectNode> nodes)
+    {
+        var count = 0;
+        foreach (var node in nodes)
+        {
+            count++;
+            if (node.Children.Count > 0)
+                count += CountNodes(node.Children);
+        }
+        return count;
+    }
 
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
