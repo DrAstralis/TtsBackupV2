@@ -56,6 +56,8 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
+                                
+
                             </StackPanel>
                         </HierarchicalDataTemplate>
                     </TreeView.ItemTemplate>
@@ -84,6 +86,7 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
+
             </StackPanel>
         </Grid>
     </DockPanel>

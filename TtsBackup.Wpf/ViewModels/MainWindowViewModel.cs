@@ -20,7 +20,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int _assetInvalid;
     private int _assetLocal;
     private int _assetMissingFilename;
-private string _urlSummaryText = string.Empty;
+    private string _urlSummaryText = string.Empty;
 
     public MainWindowViewModel(IAssetScanner assetScanner)
     {
@@ -188,6 +188,7 @@ private string _urlSummaryText = string.Empty;
             UrlSummaryText = $"Assets found: {AssetTotal} (invalid: {AssetInvalid}, local paths: {AssetLocal}, missing filenames: {AssetMissingFilename})";
         });
     }
+
 
     private static void ApplyOwnCountsRecursive(ObjectTreeNodeViewModel node, Dictionary<string, int> ownByGuid)
     {

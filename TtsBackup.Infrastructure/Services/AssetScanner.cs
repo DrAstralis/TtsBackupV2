@@ -49,6 +49,10 @@ public sealed class AssetScanner : IAssetScanner
 
             var results = new List<AssetReference>();
 
+            // Global de-dupe by JSON field path to avoid double-counting the same literal value
+            // when overlapping subtrees are scanned (e.g., parent ObjectStates + child GUID scan).
+            var seenGlobalFieldPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var guid in includedGuids)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -63,7 +67,7 @@ public sealed class AssetScanner : IAssetScanner
                 if (token is null)
                     continue;
 
-                ScanObjectToken(node, token, results);
+                ScanObjectToken(node, token, results, seenGlobalFieldPaths);
             }
 
             return (IReadOnlyList<AssetReference>)results;
@@ -137,7 +141,7 @@ public sealed class AssetScanner : IAssetScanner
             AddAllDescendants(c, included);
     }
 
-    private static void ScanObjectToken(ObjectNode node, JToken objectToken, List<AssetReference> results)
+    private static void ScanObjectToken(ObjectNode node, JToken objectToken, List<AssetReference> results, HashSet<string> seenGlobalFieldPaths)
     {
         // Avoid duplicate entries for the exact same field path.
         var seenFieldPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -149,12 +153,12 @@ public sealed class AssetScanner : IAssetScanner
             if (t is JValue v && v.Type == JTokenType.String)
             {
                 var s = (string?)v.Value;
-                TryAdd(node, v, s, type, results, seenFieldPaths);
+                TryAdd(node, v, s, type, results, seenFieldPaths, seenGlobalFieldPaths);
             }
         }
 
         // CustomDeck is a special case: keyed dictionary of card backs/faces.
-        ScanCustomDeck(node, objectToken, results, seenFieldPaths);
+        ScanCustomDeck(node, objectToken, results, seenFieldPaths, seenGlobalFieldPaths);
 
         // 2) Any other URL-like strings (real-world saves have vendor fields).
         WalkValues(objectToken, v =>
@@ -169,12 +173,12 @@ public sealed class AssetScanner : IAssetScanner
 
             if (HttpUrlRegex.IsMatch(s))
             {
-                TryAdd(node, v, s, AssetType.Unknown, results, seenFieldPaths);
+                TryAdd(node, v, s, AssetType.Unknown, results, seenFieldPaths, seenGlobalFieldPaths);
             }
         });
     }
 
-    private static void ScanCustomDeck(ObjectNode node, JToken objectToken, List<AssetReference> results, HashSet<string> seenFieldPaths)
+    private static void ScanCustomDeck(ObjectNode node, JToken objectToken, List<AssetReference> results, HashSet<string> seenFieldPaths, HashSet<string> seenGlobalFieldPaths)
     {
         var customDeck = objectToken["CustomDeck"];
         if (customDeck is not JObject deckObj) return;
@@ -183,11 +187,11 @@ public sealed class AssetScanner : IAssetScanner
         {
             if (deckEntry.Value is not JObject deckDef) continue;
 
-            AddDeckField(node, deckDef, "FaceURL", AssetType.DeckFace, results, seenFieldPaths);
-            AddDeckField(node, deckDef, "BackURL", AssetType.DeckBack, results, seenFieldPaths);
+            AddDeckField(node, deckDef, "FaceURL", AssetType.DeckFace, results, seenFieldPaths, seenGlobalFieldPaths);
+            AddDeckField(node, deckDef, "BackURL", AssetType.DeckBack, results, seenFieldPaths, seenGlobalFieldPaths);
 
             // Some saves use UniqueBackURL per card.
-            AddDeckField(node, deckDef, "UniqueBackURL", AssetType.DeckBack, results, seenFieldPaths);
+            AddDeckField(node, deckDef, "UniqueBackURL", AssetType.DeckBack, results, seenFieldPaths, seenGlobalFieldPaths);
         }
     }
 
@@ -197,13 +201,14 @@ public sealed class AssetScanner : IAssetScanner
         string field,
         AssetType type,
         List<AssetReference> results,
-        HashSet<string> seenFieldPaths)
+        HashSet<string> seenFieldPaths,
+        HashSet<string> seenGlobalFieldPaths)
     {
         var t = deckDef.SelectToken(field, errorWhenNoMatch: false);
         if (t is JValue v && v.Type == JTokenType.String)
         {
             var s = (string?)v.Value;
-            TryAdd(node, v, s, type, results, seenFieldPaths);
+            TryAdd(node, v, s, type, results, seenFieldPaths, seenGlobalFieldPaths);
         }
     }
 
@@ -241,11 +246,17 @@ public sealed class AssetScanner : IAssetScanner
         string? value,
         AssetType type,
         List<AssetReference> results,
-        HashSet<string> seenFieldPaths)
+        HashSet<string> seenFieldPaths,
+        HashSet<string> seenGlobalFieldPaths)
     {
         if (string.IsNullOrWhiteSpace(value)) return;
 
         var fieldPath = valueToken.Path;
+
+        // Global de-dupe: same literal field in the JSON may be reached via multiple scan roots.
+        if (!seenGlobalFieldPaths.Add(fieldPath)) return;
+
+        // Per-object de-dupe: prevents double-adding the same field within a single object scan.
         if (!seenFieldPaths.Add(fieldPath)) return;
 
         // Keep extension inference for later phases (download/export). For now, only fill when obvious.
