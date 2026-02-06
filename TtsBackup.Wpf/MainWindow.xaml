@@ -33,7 +33,7 @@
                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal">
                                 <CheckBox
-                                    IsThreeState="True"
+                                    IsThreeState="{Binding HasChildren}"
                                     IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     IsEnabled="{Binding IsSelectionLocked, Converter={StaticResource InvertBoolConverter}}"
                                     VerticalAlignment="Center"

@@ -13,6 +13,7 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
     public ObjectTreeNodeViewModel(ObjectTreeNodeViewModel? parent = null)
     {
         Parent = parent;
+        Children.CollectionChanged += (_, __) => OnPropertyChanged(nameof(HasChildren));
     }
 
     public ObjectTreeNodeViewModel? Parent { get; }
@@ -30,6 +31,13 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
     public bool IsSelectionLocked { get; set; }
 
     public ObservableCollection<ObjectTreeNodeViewModel> Children { get; } = new();
+
+    /// <summary>
+    /// True if this node has children.
+    /// Used by the TreeView checkbox to enable tri-state behavior only for parents.
+    /// Leaf nodes should be strictly two-state (checked/unchecked).
+    /// </summary>
+    public bool HasChildren => Children.Count > 0;
 
     /// <summary>
     /// Number of URLs found in this object's own fields (excluding ContainedObjects / States / ObjectStates).
@@ -81,14 +89,41 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
                 return;
             }
 
-            if (_isChecked == value) return;
-            _isChecked = value;
+            // WPF cycles tri-state checkboxes as: true -> null -> false.
+            // For this app, "partial" (null) is a derived/read-only state that only appears
+            // when children differ. A user click should never land on null.
+            //
+            // Desired click behavior:
+            // - Checked parent click => Unchecked (not Partial)
+            // - Partial parent click => Checked (select all)
+            // - Leaf nodes are two-state only (never Partial)
+            var coerced = value;
+            if (!HasChildren)
+            {
+                coerced = value ?? false;
+            }
+            else
+            {
+                if (value == null)
+                {
+                    // true -> null is treated as uncheck.
+                    coerced = false;
+                }
+                else if (_isChecked == null && value == false)
+                {
+                    // null -> false is treated as check-all.
+                    coerced = true;
+                }
+            }
+
+            if (_isChecked == coerced) return;
+            _isChecked = coerced;
             OnPropertyChanged();
 
             // Propagate to children.
             foreach (var child in Children)
             {
-                child.SetFromAncestor(value);
+                child.SetFromAncestor(coerced);
             }
 
             // Recompute parents.
