@@ -8,6 +8,11 @@
         d:DataContext="{d:DesignInstance Type=vm:MainWindowViewModel, IsDesignTimeCreatable=False}"
         Title="TTS Asset Backup" Height="600" Width="1000">
 
+    <Window.Resources>
+        <!-- Local helper used for Visibility bindings inside the edit/detail panel. -->
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
     <DockPanel>
         <!-- Top bar -->
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="8">
@@ -103,7 +108,23 @@
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
 
-                                            <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" />
+                                                <TextBlock Text="  • modified" Margin="8,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Setter Property="Foreground" Value="OrangeRed" />
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasOverrides}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
 
                                             <Button Grid.Column="1" Content="Edit" Margin="6,0,0,0"
                                                     Command="{Binding BeginEditCommand}" />
@@ -115,13 +136,16 @@
                                                     Command="{Binding CancelCommand}" />
                                         </Grid>
 
-                                        <ItemsControl ItemsSource="{Binding Fields}" Margin="0,6,0,0">
+                                        <!-- Field details only shown while editing; keeps the list tidy after Save/Cancel. -->
+                                        <ItemsControl ItemsSource="{Binding Fields}" Margin="0,6,0,0"
+                                                      Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <Grid Margin="0,2,0,2">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="180" />
                                                             <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
                                                             <ColumnDefinition Width="Auto" />
                                                         </Grid.ColumnDefinitions>
 
@@ -132,10 +156,38 @@
                                                              Instead, render BOTH read + edit controls and toggle Visibility. -->
                                                         <Grid Grid.Column="1">
                                                             <TextBlock x:Name="ReadValueText" Text="{Binding Value}" TextWrapping="Wrap" />
-                                                            <TextBox x:Name="EditValueBox" Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" Visibility="Collapsed" />
+                                                            <TextBox x:Name="EditValueTextBox" Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" Visibility="Collapsed" />
+                                                            <ComboBox x:Name="EditValueBoolCombo"
+                                                                      SelectedValue="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}"
+                                                                      SelectedValuePath="Content"
+                                                                      Visibility="Collapsed"
+                                                                      HorizontalAlignment="Stretch"
+                                                                      HorizontalContentAlignment="Left">
+                                                                <ComboBoxItem Content="true" />
+                                                                <ComboBoxItem Content="false" />
+                                                            </ComboBox>
                                                         </Grid>
 
-                                                        <Button Grid.Column="2" Content="Generate" Margin="6,0,0,0"
+                                                        <Button Grid.Column="2" Content="Default" Margin="6,0,0,0"
+                                                                Command="{Binding DataContext.ResetFieldToDefaultCommand, RelativeSource={RelativeSource AncestorType=Border}}"
+                                                                CommandParameter="{Binding}">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <MultiDataTrigger>
+                                                                            <MultiDataTrigger.Conditions>
+                                                                                <Condition Binding="{Binding IsParentEditing}" Value="True" />
+                                                                                <Condition Binding="{Binding IsOverridden}" Value="True" />
+                                                                            </MultiDataTrigger.Conditions>
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </MultiDataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
+
+                                                        <Button Grid.Column="3" Content="Generate" Margin="6,0,0,0"
                                                                 Command="{Binding DataContext.GenerateFilenameCommand, RelativeSource={RelativeSource AncestorType=Border}}"
                                                                 CommandParameter="{Binding}">
                                                             <Button.Style>
@@ -159,8 +211,18 @@
                                                     <DataTemplate.Triggers>
                                                         <DataTrigger Binding="{Binding IsParentEditing}" Value="True">
                                                             <Setter TargetName="ReadValueText" Property="Visibility" Value="Collapsed" />
-                                                            <Setter TargetName="EditValueBox" Property="Visibility" Value="Visible" />
+                                                            <Setter TargetName="EditValueTextBox" Property="Visibility" Value="Visible" />
                                                         </DataTrigger>
+
+                                                        <!-- Boolean fields: use a dropdown in edit mode instead of a text box. -->
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding IsParentEditing}" Value="True" />
+                                                                <Condition Binding="{Binding IsBooleanField}" Value="True" />
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter TargetName="EditValueTextBox" Property="Visibility" Value="Collapsed" />
+                                                            <Setter TargetName="EditValueBoolCombo" Property="Visibility" Value="Visible" />
+                                                        </MultiDataTrigger>
                                                     </DataTemplate.Triggers>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>

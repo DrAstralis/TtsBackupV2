@@ -431,12 +431,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             value: string.Empty,
                             isUrlField: false,
                             isFilenameField: false,
-                            isEditable: true));
+                            isEditable: true,
+                            isBooleanField: false));
                         return;
                     }
 
                     // Treat everything scalar as editable text for now (validation stub).
-                    var str = v.Value?.ToString() ?? string.Empty;
+                    var isBooleanToken = v.Type == JTokenType.Boolean;
+                    var str = isBooleanToken
+                        ? (v.Value<bool>() ? "true" : "false")
+                        : (v.Value?.ToString() ?? string.Empty);
                     var leaf = leafNameHint;
                     var isUrlField = leaf.EndsWith("URL", StringComparison.OrdinalIgnoreCase) || leaf.EndsWith("Url", StringComparison.OrdinalIgnoreCase);
                     fields.Add(new EditableFieldViewModel(
@@ -445,7 +449,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         value: str,
                         isUrlField: isUrlField,
                         isFilenameField: false,
-                        isEditable: true));
+                        isEditable: true,
+                        isBooleanField: isBooleanToken));
 
                     if (isUrlField)
                     {
@@ -456,7 +461,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             value: filename ?? string.Empty,
                             isUrlField: false,
                             isFilenameField: true,
-                            isEditable: true));
+                            isEditable: true,
+                            isBooleanField: false));
                     }
                     break;
 

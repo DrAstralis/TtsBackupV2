@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
@@ -8,6 +9,7 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
     private string _value;
     private string _editValue;
     private bool _isParentEditing;
+    private readonly string _originalValue;
 
     public EditableFieldViewModel(
         string path,
@@ -15,15 +17,18 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
         string value,
         bool isUrlField,
         bool isFilenameField,
-        bool isEditable)
+        bool isEditable,
+        bool isBooleanField)
     {
         Path = path;
         DisplayName = displayName;
+        _originalValue = value;
         _value = value;
         _editValue = value;
         IsUrlField = isUrlField;
         IsFilenameField = isFilenameField;
         IsEditable = isEditable;
+        IsBooleanField = isBooleanField;
     }
 
     public string Path { get; }
@@ -38,6 +43,8 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
             if (_value == value) return;
             _value = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsOverridden));
+            OnPropertyChanged(nameof(NeedsFilename));
         }
     }
 
@@ -56,6 +63,12 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
     public bool IsUrlField { get; }
     public bool IsFilenameField { get; }
     public bool IsEditable { get; }
+    public bool IsBooleanField { get; }
+
+    /// <summary>Original value captured from the loaded save (used for "Default").</summary>
+    public string OriginalValue => _originalValue;
+
+    public bool IsOverridden => !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
 
     /// <summary>Whether the owning row is currently in edit mode.</summary>
     public bool IsParentEditing
@@ -76,6 +89,8 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
     public void CommitEdit() => Value = EditValue;
 
     public void CancelEdit() => EditValue = Value;
+
+    public void ResetEditToDefault() => EditValue = OriginalValue;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

@@ -11,6 +11,7 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
 {
     private bool _isEditing;
     private bool _fieldsLoaded;
+    private bool _hasOverrides;
     private readonly Func<ObservableCollection<EditableFieldViewModel>> _loadFields;
 
     public IncludedNodeRowViewModel(
@@ -32,6 +33,7 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
         SaveCommand = new RelayCommand(Save, () => IsEditing);
         CancelCommand = new RelayCommand(Cancel, () => IsEditing);
         GenerateFilenameCommand = new RelayCommand<EditableFieldViewModel>(GenerateFilename, f => IsEditing && f is not null && f.IsFilenameField);
+        ResetFieldToDefaultCommand = new RelayCommand<EditableFieldViewModel>(ResetFieldToDefault, f => IsEditing && f is not null && f.IsEditable && f.IsOverridden);
     }
 
     public string Guid { get; }
@@ -52,6 +54,17 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
     }
 
     public ObservableCollection<EditableFieldViewModel> Fields { get; } = new();
+
+    public bool HasOverrides
+    {
+        get => _hasOverrides;
+        private set
+        {
+            if (_hasOverrides == value) return;
+            _hasOverrides = value;
+            OnPropertyChanged();
+        }
+    }
 
     public bool HasFieldsLoaded
     {
@@ -79,6 +92,7 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
             SaveCommand.RaiseCanExecuteChanged();
             CancelCommand.RaiseCanExecuteChanged();
             GenerateFilenameCommand.RaiseCanExecuteChanged();
+            ResetFieldToDefaultCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -86,6 +100,7 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
     public RelayCommand SaveCommand { get; }
     public RelayCommand CancelCommand { get; }
     public RelayCommand<EditableFieldViewModel> GenerateFilenameCommand { get; }
+    public RelayCommand<EditableFieldViewModel> ResetFieldToDefaultCommand { get; }
 
     private void BeginEdit()
     {
@@ -103,9 +118,13 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
         var loaded = _loadFields();
         Fields.Clear();
         foreach (var f in loaded)
+        {
+            f.PropertyChanged += Field_PropertyChanged;
             Fields.Add(f);
+        }
 
         HasFieldsLoaded = true;
+        RefreshHasOverrides();
     }
 
     private void Save()
@@ -114,6 +133,7 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
             f.CommitEdit();
 
         IsEditing = false;
+        RefreshHasOverrides();
     }
 
     private void Cancel()
@@ -122,6 +142,7 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
             f.CancelEdit();
 
         IsEditing = false;
+        RefreshHasOverrides();
     }
 
     private void GenerateFilename(EditableFieldViewModel? field)
@@ -132,6 +153,25 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
         // GUID only for now. Extension inference comes later (downloader response).
         field.EditValue = System.Guid.NewGuid().ToString("N");
     }
+
+    private void ResetFieldToDefault(EditableFieldViewModel? field)
+    {
+        if (field is null) return;
+        if (!field.IsEditable) return;
+
+        field.ResetEditToDefault();
+        RefreshHasOverrides();
+    }
+
+    private void Field_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // Keep the row-level "modified" badge accurate.
+        if (e.PropertyName is nameof(EditableFieldViewModel.IsOverridden) or nameof(EditableFieldViewModel.Value))
+            RefreshHasOverrides();
+    }
+
+    private void RefreshHasOverrides()
+        => HasOverrides = Fields.Any(f => f.IsOverridden);
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
