@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:TtsBackup.Wpf.Converters">
     <Application.Resources>
+        <conv:DepthToMarginConverter x:Key="DepthToMarginConverter" />
         <conv:InvertBoolConverter x:Key="InvertBoolConverter" />
     </Application.Resources>
 </Application>

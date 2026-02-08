@@ -63,31 +63,116 @@
                     </TreeView.ItemTemplate>
                 </TreeView>
             </Border>
+            <!-- Right: included node details + edits -->
+            <DockPanel Grid.Column="1">
+                <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Text="Included selection details"
+                               FontWeight="Bold"
+                               Margin="0,0,0,8" />
+                    <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding UrlSummaryText}" TextWrapping="Wrap" Margin="0,8,0,8">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding AssetScanOk}" Value="True">
+                                        <Setter Property="Foreground" Value="Green" />
+                                        <Setter Property="FontWeight" Value="Bold" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding AssetScanHasWarnings}" Value="True">
+                                        <Setter Property="Foreground" Value="OrangeRed" />
+                                        <Setter Property="FontWeight" Value="Bold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
 
-            <!-- Right: simple info for now -->
-            <StackPanel Grid.Column="1">
-                <TextBlock Text="Save summary"
-                           FontWeight="Bold"
-                           Margin="0,0,0,8" />
-                <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding UrlSummaryText}" TextWrapping="Wrap" Margin="0,8,0,0">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding AssetScanOk}" Value="True">
-                                    <Setter Property="Foreground" Value="Green" />
-                                    <Setter Property="FontWeight" Value="Bold" />
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding AssetScanHasWarnings}" Value="True">
-                                    <Setter Property="Foreground" Value="OrangeRed" />
-                                    <Setter Property="FontWeight" Value="Bold" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding IncludedNodes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="#DDD" BorderThickness="1" Padding="6"
+                                        Margin="{Binding Depth, Converter={StaticResource DepthToMarginConverter}}">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
 
-            </StackPanel>
+                                            <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+
+                                            <Button Grid.Column="1" Content="Edit" Margin="6,0,0,0"
+                                                    Command="{Binding BeginEditCommand}" />
+
+                                            <Button Grid.Column="2" Content="Save" Margin="6,0,0,0"
+                                                    Command="{Binding SaveCommand}" />
+
+                                            <Button Grid.Column="3" Content="Cancel" Margin="6,0,0,0"
+                                                    Command="{Binding CancelCommand}" />
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding Fields}" Margin="0,6,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,2,0,2">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="180" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <TextBlock Grid.Column="0" Text="{Binding DisplayName}" VerticalAlignment="Center" />
+
+                                                        <!-- IMPORTANT: Do NOT use a UIElement instance in a Setter.Value.
+                                                             WPF will reuse the same element across rows, so only the last row renders.
+                                                             Instead, render BOTH read + edit controls and toggle Visibility. -->
+                                                        <Grid Grid.Column="1">
+                                                            <TextBlock x:Name="ReadValueText" Text="{Binding Value}" TextWrapping="Wrap" />
+                                                            <TextBox x:Name="EditValueBox" Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}" Visibility="Collapsed" />
+                                                        </Grid>
+
+                                                        <Button Grid.Column="2" Content="Generate" Margin="6,0,0,0"
+                                                                Command="{Binding DataContext.GenerateFilenameCommand, RelativeSource={RelativeSource AncestorType=Border}}"
+                                                                CommandParameter="{Binding}">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <MultiDataTrigger>
+                                                                            <MultiDataTrigger.Conditions>
+                                                                                <Condition Binding="{Binding IsFilenameField}" Value="True" />
+                                                                                <Condition Binding="{Binding NeedsFilename}" Value="True" />
+                                                                                <Condition Binding="{Binding IsParentEditing}" Value="True" />
+                                                                            </MultiDataTrigger.Conditions>
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </MultiDataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
+                                                    </Grid>
+
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsParentEditing}" Value="True">
+                                                            <Setter TargetName="ReadValueText" Property="Visibility" Value="Collapsed" />
+                                                            <Setter TargetName="EditValueBox" Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
         </Grid>
     </DockPanel>
 </Window>

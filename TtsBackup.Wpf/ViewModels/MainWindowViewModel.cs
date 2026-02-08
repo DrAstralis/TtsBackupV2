@@ -1,8 +1,11 @@
+using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TtsBackup.Core.Models;
 using TtsBackup.Core.Services;
 
@@ -11,6 +14,9 @@ namespace TtsBackup.Wpf.ViewModels;
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IAssetScanner _assetScanner;
+
+    private SaveDocument? _currentDocument;
+    private JObject? _currentRootToken;
 
     private string _title = "TTS Asset Backup";
     private string _statusText = "Ready.";
@@ -28,6 +34,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public ObservableCollection<ObjectTreeNodeViewModel> RootNodes { get; } = new();
+
+    public ObservableCollection<IncludedNodeRowViewModel> IncludedNodes { get; } = new();
 
     public string Title
     {
@@ -135,12 +143,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         RootNodes.Clear();
 
+        _currentDocument = document;
+        _currentRootToken = ParseRootToken(document.RawJson);
+        IncludedNodes.Clear();
+
+
         foreach (var node in tree)
         {
             var vm = ConvertNode(node, parent: null, ancestorLocked: false);
             RootNodes.Add(vm);
             WireNode(vm);
         }
+
+        RebuildIncludedNodes();
 
         var totalObjects = CountNodes(tree);
         Title = $"TTS Asset Backup - {System.IO.Path.GetFileName(path)}";
@@ -273,12 +288,40 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (e.PropertyName == nameof(ObjectTreeNodeViewModel.IsChecked))
             {
-                RecomputeSelectionSummary();
+                DebounceSelectionRefresh();
             }
         };
 
         foreach (var child in node.Children)
             WireNode(child);
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
+
+    private void DebounceSelectionRefresh()
+    {
+        // Selection cascades cause many IsChecked changes; debounce to keep UI responsive.
+        _selectionDebounce ??= new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(120)
+        };
+
+        _selectionDebounce.Stop();
+        _selectionDebounce.Tick -= SelectionDebounceTick;
+        _selectionDebounce.Tick += SelectionDebounceTick;
+        _selectionDebounce.Start();
+    }
+
+    private void SelectionDebounceTick(object? sender, EventArgs e)
+    {
+        if (_selectionDebounce is not null)
+        {
+            _selectionDebounce.Stop();
+            _selectionDebounce.Tick -= SelectionDebounceTick;
+        }
+
+        RecomputeSelectionSummary();
+        RebuildIncludedNodes();
     }
 
     private static ObjectTreeNodeViewModel ConvertNode(ObjectNode node, ObjectTreeNodeViewModel? parent, bool ancestorLocked)
@@ -314,6 +357,200 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         return count;
     }
+
+
+    private void RebuildIncludedNodes()
+    {
+        IncludedNodes.Clear();
+        if (_currentRootToken is null) return;
+
+        static IEnumerable<ObjectTreeNodeViewModel> Flatten(ObjectTreeNodeViewModel n)
+        {
+            yield return n;
+            foreach (var c in n.Children)
+                foreach (var cc in Flatten(c))
+                    yield return cc;
+        }
+
+        var anySelected = RootNodes.SelectMany(r => Flatten(r)).Any(n => !n.IsSelectionLocked && n.IsChecked == true);
+        if (!anySelected)
+            return; // Only show included nodes when the user has selected something.
+
+        foreach (var root in RootNodes)
+            Walk(root, depth: 0);
+
+        void Walk(ObjectTreeNodeViewModel node, int depth)
+        {
+            if (node.IsChecked != false)
+            {
+                var row = BuildRow(node, depth);
+                if (row is not null)
+                    IncludedNodes.Add(row);
+            }
+
+            foreach (var child in node.Children)
+                Walk(child, depth + 1);
+        }
+    }
+
+    private IncludedNodeRowViewModel? BuildRow(ObjectTreeNodeViewModel node, int depth)
+    {
+        if (_currentRootToken is null) return null;
+        if (string.IsNullOrWhiteSpace(node.JsonPath)) return null;
+
+        var token = _currentRootToken.SelectToken(NormalizeJsonPathForSelectToken(node.JsonPath), errorWhenNoMatch: false);
+        if (token is null) return null;
+
+        // NOTE: Extracting all scalar fields can be expensive on large objects (scripts, decks, etc.).
+        // We load fields lazily when the user clicks Edit for a row.
+        var row = new IncludedNodeRowViewModel(
+            guid: node.Guid,
+            name: node.Name,
+            type: node.Type,
+            depth: depth,
+            isAutoIncluded: node.IsSelectionLocked,
+            loadFields: () => ExtractScalarFields(token));
+
+        return row;
+    }
+
+    private static ObservableCollection<EditableFieldViewModel> ExtractScalarFields(JToken objectToken)
+    {
+        var fields = new ObservableCollection<EditableFieldViewModel>();
+
+        void WalkToken(JToken t, string prefix, string leafNameHint)
+        {
+            switch (t)
+            {
+                case JValue v:
+                    if (v.Type == JTokenType.Null)
+                    {
+                        fields.Add(new EditableFieldViewModel(
+                            path: prefix,
+                            displayName: prefix,
+                            value: string.Empty,
+                            isUrlField: false,
+                            isFilenameField: false,
+                            isEditable: true));
+                        return;
+                    }
+
+                    // Treat everything scalar as editable text for now (validation stub).
+                    var str = v.Value?.ToString() ?? string.Empty;
+                    var leaf = leafNameHint;
+                    var isUrlField = leaf.EndsWith("URL", StringComparison.OrdinalIgnoreCase) || leaf.EndsWith("Url", StringComparison.OrdinalIgnoreCase);
+                    fields.Add(new EditableFieldViewModel(
+                        path: prefix,
+                        displayName: prefix,
+                        value: str,
+                        isUrlField: isUrlField,
+                        isFilenameField: false,
+                        isEditable: true));
+
+                    if (isUrlField)
+                    {
+                        var filename = TryExtractFilename(str);
+                        fields.Add(new EditableFieldViewModel(
+                            path: prefix + "#Filename",
+                            displayName: prefix + " (Filename)",
+                            value: filename ?? string.Empty,
+                            isUrlField: false,
+                            isFilenameField: true,
+                            isEditable: true));
+                    }
+                    break;
+
+                case JObject o:
+                    foreach (var p in o.Properties())
+                    {
+                        if (IsStructuralContainer(p.Name))
+                            continue;
+
+                        var childPrefix = string.IsNullOrWhiteSpace(prefix) ? p.Name : prefix + "." + p.Name;
+                        WalkToken(p.Value, childPrefix, p.Name);
+                    }
+                    break;
+
+                case JArray a:
+                    // Only expand arrays of scalars to avoid JSON editing.
+                    var allScalar = a.All(x => x is JValue);
+                    if (!allScalar) return;
+
+                    for (var i = 0; i < a.Count; i++)
+                    {
+                        var idxName = $"{leafNameHint}[{i}]";
+                        var childPrefix = $"{prefix}[{i}]";
+                        WalkToken(a[i], childPrefix, idxName);
+                    }
+                    break;
+            }
+        }
+
+        // Start from object root: expose scalar properties anywhere inside, excluding structural containers.
+        WalkToken(objectToken, prefix: string.Empty, leafNameHint: "root");
+
+        // Sort: keep root out, keep stable.
+        var ordered = fields
+            .Where(f => f.DisplayName != "root")
+            .OrderBy(f => f.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new ObservableCollection<EditableFieldViewModel>(ordered);
+    }
+
+    private static bool IsStructuralContainer(string name)
+        => name.Equals("ContainedObjects", StringComparison.OrdinalIgnoreCase)
+           || name.Equals("States", StringComparison.OrdinalIgnoreCase)
+           || name.Equals("ObjectStates", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeJsonPathForSelectToken(string jsonPath)
+    {
+        var p = jsonPath.Trim();
+        if (p == "$") return "$";
+        if (p.StartsWith("$."))
+            return p;
+        if (p.StartsWith("$["))
+            return p;
+        if (p.StartsWith("."))
+            return "$" + p;
+        return "$." + p;
+    }
+
+    private static JObject? ParseRootToken(string rawJson)
+    {
+        try
+        {
+            return JObject.Parse(rawJson);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryExtractFilename(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            var path = uri.AbsolutePath;
+            if (string.IsNullOrWhiteSpace(path) || path.EndsWith('/')) return null;
+            var last = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (string.IsNullOrWhiteSpace(last)) return null;
+            // Require dot to treat as a filename in v1.
+            if (!last.Contains('.')) return null;
+            return last;
+        }
+
+        // Local path guess (treat backslashes as path separators).
+        var parts = value.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var leaf = parts.LastOrDefault();
+        if (string.IsNullOrWhiteSpace(leaf)) return null;
+        return leaf.Contains('.') ? leaf : null;
+    }
+
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
