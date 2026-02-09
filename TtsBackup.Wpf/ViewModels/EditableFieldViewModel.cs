@@ -57,6 +57,8 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
             if (_editValue == value) return;
             _editValue = value;
             OnPropertyChanged();
+            // While editing, override/default UI depends on whether the edit value differs from original.
+            OnPropertyChanged(nameof(IsOverridden));
         }
     }
 
@@ -68,7 +70,15 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
     /// <summary>Original value captured from the loaded save (used for "Default").</summary>
     public string OriginalValue => _originalValue;
 
-    public bool IsOverridden => !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
+    /// <summary>
+    /// True when the user has deviated from the original value.
+    /// While the row is being edited, this compares the working <see cref="EditValue"/>.
+    /// Otherwise it compares the committed <see cref="Value"/>.
+    /// </summary>
+    public bool IsOverridden
+        => IsParentEditing
+            ? !string.Equals(EditValue, OriginalValue, StringComparison.Ordinal)
+            : !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
 
     /// <summary>Whether the owning row is currently in edit mode.</summary>
     public bool IsParentEditing
@@ -79,6 +89,8 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
             if (_isParentEditing == value) return;
             _isParentEditing = value;
             OnPropertyChanged();
+            // Switching in/out of edit mode changes which value participates in IsOverridden.
+            OnPropertyChanged(nameof(IsOverridden));
         }
     }
 

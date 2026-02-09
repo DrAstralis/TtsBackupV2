@@ -167,7 +167,11 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
     {
         // Keep the row-level "modified" badge accurate.
         if (e.PropertyName is nameof(EditableFieldViewModel.IsOverridden) or nameof(EditableFieldViewModel.Value))
+        {
             RefreshHasOverrides();
+            // Enable/disable the per-field Default button as the user edits.
+            ResetFieldToDefaultCommand.RaiseCanExecuteChanged();
+        }
     }
 
     private void RefreshHasOverrides()

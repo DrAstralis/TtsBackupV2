@@ -8,11 +8,6 @@
         d:DataContext="{d:DesignInstance Type=vm:MainWindowViewModel, IsDesignTimeCreatable=False}"
         Title="TTS Asset Backup" Height="600" Width="1000">
 
-    <Window.Resources>
-        <!-- Local helper used for Visibility bindings inside the edit/detail panel. -->
-        <BooleanToVisibilityConverter x:Key="BoolToVis" />
-    </Window.Resources>
-
     <DockPanel>
         <!-- Top bar -->
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="8">
@@ -27,12 +22,17 @@
         <!-- Main content -->
         <Grid Margin="8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="3*" />
-                <ColumnDefinition Width="2*" />
+                <!-- Left panel: starts ~60% but user can resize -->
+                <ColumnDefinition Width="3*" MinWidth="260" />
+                <!-- Splitter column -->
+                <ColumnDefinition Width="5" />
+                <!-- Right panel: starts ~40% but user can resize -->
+                <ColumnDefinition Width="2*" MinWidth="420" />
             </Grid.ColumnDefinitions>
 
             <!-- Left: object tree -->
-            <Border BorderBrush="Gray" BorderThickness="1" Padding="4" Margin="0,0,8,0">
+            <Border Grid.Column="0"
+                    BorderBrush="Gray" BorderThickness="1" Padding="4" Margin="0,0,8,0">
                 <TreeView ItemsSource="{Binding RootNodes}">
                     <TreeView.ItemTemplate>
                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
@@ -61,15 +61,23 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                
-
                             </StackPanel>
                         </HierarchicalDataTemplate>
                     </TreeView.ItemTemplate>
                 </TreeView>
             </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          ResizeDirection="Columns"
+                          ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="True" />
+
             <!-- Right: included node details + edits -->
-            <DockPanel Grid.Column="1">
+            <DockPanel Grid.Column="2">
                 <StackPanel DockPanel.Dock="Top">
                     <TextBlock Text="Included selection details"
                                FontWeight="Bold"
@@ -108,23 +116,7 @@
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
 
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" />
-                                                <TextBlock Text="  • modified" Margin="8,0,0,0" VerticalAlignment="Center">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                            <Setter Property="Foreground" Value="OrangeRed" />
-                                                            <Setter Property="FontWeight" Value="SemiBold" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding HasOverrides}" Value="True">
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                            </StackPanel>
+                                            <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" VerticalAlignment="Center" />
 
                                             <Button Grid.Column="1" Content="Edit" Margin="6,0,0,0"
                                                     Command="{Binding BeginEditCommand}" />
@@ -136,9 +128,19 @@
                                                     Command="{Binding CancelCommand}" />
                                         </Grid>
 
-                                        <!-- Field details only shown while editing; keeps the list tidy after Save/Cancel. -->
-                                        <ItemsControl ItemsSource="{Binding Fields}" Margin="0,6,0,0"
-                                                      Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+                                        <!-- CHANGED: collapse field list unless row is in edit mode -->
+                                        <ItemsControl ItemsSource="{Binding Fields}" Margin="0,6,0,0">
+                                            <ItemsControl.Style>
+                                                <Style TargetType="ItemsControl">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ItemsControl.Style>
+
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <Grid Margin="0,2,0,2">
