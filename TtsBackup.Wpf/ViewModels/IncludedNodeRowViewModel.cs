@@ -127,7 +127,14 @@ public sealed class IncludedNodeRowViewModel : INotifyPropertyChanged
         RefreshHasOverrides();
     }
 
-    private void Save()
+    
+    /// <summary>Ensure fields are materialized (used for bulk actions outside per-row edit mode).</summary>
+    public void EnsureFieldsLoadedForBulk() => EnsureFieldsLoaded();
+
+    /// <summary>Recompute override state after external/bulk edits.</summary>
+    public void RefreshOverrides() => RefreshHasOverrides();
+
+private void Save()
     {
         foreach (var f in Fields.Where(x => x.IsEditable))
             f.CommitEdit();

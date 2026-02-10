@@ -60,6 +60,8 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
             if (_editValue == value) return;
             _editValue = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsOverridden));
+            OnPropertyChanged(nameof(NeedsFilename));
         }
     }
 
@@ -95,7 +97,9 @@ public bool IsUrlGroupMember => UrlGroupId >= 0;
     /// <summary>Original value captured from the loaded save (used for "Default").</summary>
     public string OriginalValue => _originalValue;
 
-    public bool IsOverridden => !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
+    public bool IsOverridden => IsParentEditing
+        ? !string.Equals(EditValue, OriginalValue, StringComparison.Ordinal)
+        : !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
 
     /// <summary>Whether the owning row is currently in edit mode.</summary>
     public bool IsParentEditing
@@ -106,10 +110,12 @@ public bool IsUrlGroupMember => UrlGroupId >= 0;
             if (_isParentEditing == value) return;
             _isParentEditing = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsOverridden));
+            OnPropertyChanged(nameof(NeedsFilename));
         }
     }
 
-    public bool NeedsFilename => IsFilenameField && string.IsNullOrWhiteSpace(Value);
+    public bool NeedsFilename => IsFilenameField && string.IsNullOrWhiteSpace(IsParentEditing ? EditValue : Value);
 
     public void BeginEdit() => EditValue = Value;
 
@@ -118,6 +124,13 @@ public bool IsUrlGroupMember => UrlGroupId >= 0;
     public void CancelEdit() => EditValue = Value;
 
     public void ResetEditToDefault() => EditValue = OriginalValue;
+
+    /// <summary>Revert this field fully back to its original value (clears any overrides).</summary>
+    public void RevertToDefault()
+    {
+        Value = OriginalValue;
+        EditValue = OriginalValue;
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

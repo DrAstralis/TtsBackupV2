@@ -8,6 +8,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using TtsBackup.Core.Models;
 using TtsBackup.Core.Services;
+using TtsBackup.Wpf.Commands;
 
 namespace TtsBackup.Wpf.ViewModels;
 
@@ -20,6 +21,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private string _title = "TTS Asset Backup";
     private string _statusText = "Ready.";
+    private string _replaceAllUrlBase = string.Empty;
     private string _summaryText = "Open a TTS save file to see its objects.";
     
     private int _assetTotal;
@@ -31,11 +33,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public MainWindowViewModel(IAssetScanner assetScanner)
     {
         _assetScanner = assetScanner;
+
+        ReplaceAllUrlsCommand = new RelayCommand(ReplaceAllUrls, CanReplaceAllUrls);
+        RevertAllCommand = new RelayCommand(RevertAll, CanRevertAll);
+
+        IncludedNodes.CollectionChanged += (_, __) =>
+        {
+            ReplaceAllUrlsCommand.RaiseCanExecuteChanged();
+            RevertAllCommand.RaiseCanExecuteChanged();
+        };
     }
 
-    public ObservableCollection<ObjectTreeNodeViewModel> RootNodes { get; } = new();
+    
+    private void IncludedRow_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(IncludedNodeRowViewModel.HasOverrides))
+            RevertAllCommand.RaiseCanExecuteChanged();
+    }
+
+public ObservableCollection<ObjectTreeNodeViewModel> RootNodes { get; } = new();
 
     public ObservableCollection<IncludedNodeRowViewModel> IncludedNodes { get; } = new();
+
+    public RelayCommand ReplaceAllUrlsCommand { get; }
+    public RelayCommand RevertAllCommand { get; }
 
     public string Title
     {
@@ -59,7 +80,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public string SummaryText
+        public string ReplaceAllUrlBase
+    {
+        get => _replaceAllUrlBase;
+        set
+        {
+            if (_replaceAllUrlBase == value) return;
+            _replaceAllUrlBase = value;
+            OnPropertyChanged();
+            ReplaceAllUrlsCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+public string SummaryText
     {
         get => _summaryText;
         private set
@@ -284,8 +317,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void WireNode(ObjectTreeNodeViewModel node)
     {
-        node.ConfirmUncheck = ConfirmUncheckNode;
-
         node.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ObjectTreeNodeViewModel.IsChecked))
@@ -298,55 +329,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             WireNode(child);
     }
 
-    
-    private bool ConfirmUncheckNode(ObjectTreeNodeViewModel node)
-    {
-        // Phase 3 behavior: edits are intent-only and live in the right panel rows.
-        // If the user unselects a node, the corresponding rows will disappear and edits will be lost.
-        if (!SubtreeHasPendingEdits(node))
-            return true;
-
-        var name = string.IsNullOrWhiteSpace(node.Name) ? "(unnamed object)" : node.Name;
-        var msg = $"Unselecting '{name}' will discard pending edits for this object (and any selected children).\n\nContinue?";
-        var result = MessageBox.Show(msg, "Unsaved Changes", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        return result == MessageBoxResult.Yes;
-    }
-
-    private bool SubtreeHasPendingEdits(ObjectTreeNodeViewModel root)
-    {
-        if (IncludedNodes.Count == 0)
-            return false;
-
-        var dirtyGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var row in IncludedNodes)
-        {
-            if (row.HasOverrides)
-                dirtyGuids.Add(row.Guid);
-        }
-
-        if (dirtyGuids.Count == 0)
-            return false;
-
-        static IEnumerable<ObjectTreeNodeViewModel> Flatten(ObjectTreeNodeViewModel n)
-        {
-            yield return n;
-            foreach (var c in n.Children)
-                foreach (var cc in Flatten(c))
-                    yield return cc;
-        }
-
-        foreach (var n in Flatten(root))
-        {
-            if (dirtyGuids.Contains(n.Guid))
-                return true;
-        }
-
-        return false;
-    }
-
-
-private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
+    private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
 
     private void DebounceSelectionRefresh()
     {
@@ -411,6 +394,9 @@ private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
 
     private void RebuildIncludedNodes()
     {
+        foreach (var existing in IncludedNodes)
+            existing.PropertyChanged -= IncludedRow_PropertyChanged;
+
         IncludedNodes.Clear();
         if (_currentRootToken is null) return;
 
@@ -435,7 +421,10 @@ private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
             {
                 var row = BuildRow(node, depth);
                 if (row is not null)
+                {
+                    row.PropertyChanged += IncludedRow_PropertyChanged;
                     IncludedNodes.Add(row);
+                }
             }
 
             foreach (var child in node.Children)
@@ -608,7 +597,64 @@ private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
         }
     }
 
-    private static string? TryExtractFilename(string value)
+    
+    private bool CanReplaceAllUrls() => IncludedNodes.Count > 0 && !string.IsNullOrWhiteSpace(ReplaceAllUrlBase);
+
+    private void ReplaceAllUrls()
+    {
+        var basePart = ReplaceAllUrlBase ?? string.Empty;
+
+        var updated = 0;
+        foreach (var row in IncludedNodes)
+        {
+            row.EnsureFieldsLoadedForBulk();
+
+            foreach (var f in row.Fields.Where(x => x.IsUrlField))
+            {
+                var current = row.IsEditing ? f.EditValue : f.Value;
+                if (string.IsNullOrWhiteSpace(current)) continue;
+
+                var filename = TryExtractFilename(current);
+                var next = string.IsNullOrEmpty(filename) ? basePart : basePart + filename;
+
+                f.Value = next;
+                f.EditValue = next;
+                updated++;
+            }
+
+            row.RefreshOverrides();
+        }
+
+        StatusText = updated == 0 ? "No URLs updated." : $"Updated {updated} URL(s).";
+    }
+
+    private bool CanRevertAll() => IncludedNodes.Any(x => x.HasOverrides);
+
+    private void RevertAll()
+    {
+        var reverted = 0;
+        foreach (var row in IncludedNodes)
+        {
+            if (!row.HasOverrides) continue;
+
+            row.EnsureFieldsLoadedForBulk();
+
+            foreach (var f in row.Fields)
+            {
+                if (!f.IsOverridden && string.Equals(f.EditValue, f.OriginalValue, StringComparison.Ordinal))
+                    continue;
+
+                f.RevertToDefault();
+                reverted++;
+            }
+
+            row.RefreshOverrides();
+        }
+
+        StatusText = reverted == 0 ? "No changes to revert." : $"Reverted {reverted} field change(s).";
+    }
+
+private static string? TryExtractFilename(string value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
 
