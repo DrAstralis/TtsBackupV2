@@ -417,7 +417,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private static ObservableCollection<EditableFieldViewModel> ExtractScalarFields(JToken objectToken)
     {
         var fields = new ObservableCollection<EditableFieldViewModel>();
-
+        
         void WalkToken(JToken t, string prefix, string leafNameHint)
         {
             switch (t)
@@ -432,7 +432,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             isUrlField: false,
                             isFilenameField: false,
                             isEditable: true,
-                            isBooleanField: false));
+                            isBooleanField: false,
+                            urlGroupId: -1));
                         return;
                     }
 
@@ -450,7 +451,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         isUrlField: isUrlField,
                         isFilenameField: false,
                         isEditable: true,
-                        isBooleanField: isBooleanToken));
+                        isBooleanField: isBooleanToken,
+                        urlGroupId: -1));
 
                     if (isUrlField)
                     {
@@ -462,7 +464,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             isUrlField: false,
                             isFilenameField: true,
                             isEditable: true,
-                            isBooleanField: false));
+                            isBooleanField: false,
+                            urlGroupId: -1));
+
+                        
                     }
                     break;
 
@@ -500,6 +505,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .Where(f => f.DisplayName != "root")
             .OrderBy(f => f.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // Assign URL group striping in *visual* order so each URL+Filename pair shares a color,
+        // and the colors alternate per URL set (not per row / not affected by non-URL fields).
+        var byPath = ordered.ToDictionary(f => f.Path, StringComparer.OrdinalIgnoreCase);
+        var urlSetIndex = 0;
+        foreach (var f in ordered)
+        {
+            if (!f.IsUrlField) continue;
+
+            f.SetUrlGroupId(urlSetIndex);
+            var filenamePath = f.Path + "#Filename";
+            if (byPath.TryGetValue(filenamePath, out var fn))
+            {
+                fn.SetUrlGroupId(urlSetIndex);
+            }
+
+            urlSetIndex++;
+        }
+
 
         return new ObservableCollection<EditableFieldViewModel>(ordered);
     }

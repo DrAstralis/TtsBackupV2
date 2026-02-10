@@ -9,6 +9,7 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
     private string _value;
     private string _editValue;
     private bool _isParentEditing;
+    private int _urlGroupId;
     private readonly string _originalValue;
 
     public EditableFieldViewModel(
@@ -18,7 +19,8 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
         bool isUrlField,
         bool isFilenameField,
         bool isEditable,
-        bool isBooleanField)
+        bool isBooleanField,
+        int urlGroupId = -1)
     {
         Path = path;
         DisplayName = displayName;
@@ -29,6 +31,7 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
         IsFilenameField = isFilenameField;
         IsEditable = isEditable;
         IsBooleanField = isBooleanField;
+        _urlGroupId = urlGroupId;
     }
 
     public string Path { get; }
@@ -57,8 +60,6 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
             if (_editValue == value) return;
             _editValue = value;
             OnPropertyChanged();
-            // While editing, override/default UI depends on whether the edit value differs from original.
-            OnPropertyChanged(nameof(IsOverridden));
         }
     }
 
@@ -67,18 +68,34 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
     public bool IsEditable { get; }
     public bool IsBooleanField { get; }
 
+    public int UrlGroupId
+    {
+        get => _urlGroupId;
+        private set
+        {
+            if (_urlGroupId == value) return;
+            _urlGroupId = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsUrlGroupMember));
+            OnPropertyChanged(nameof(IsUrlGroupStripeA));
+        }
+    }
+
+    
+    public void SetUrlGroupId(int urlGroupId)
+    {
+        UrlGroupId = urlGroupId;
+    }
+
+public bool IsUrlGroupMember => UrlGroupId >= 0;
+
+    public bool IsUrlGroupStripeA => IsUrlGroupMember && (UrlGroupId % 2 == 0);
+
+
     /// <summary>Original value captured from the loaded save (used for "Default").</summary>
     public string OriginalValue => _originalValue;
 
-    /// <summary>
-    /// True when the user has deviated from the original value.
-    /// While the row is being edited, this compares the working <see cref="EditValue"/>.
-    /// Otherwise it compares the committed <see cref="Value"/>.
-    /// </summary>
-    public bool IsOverridden
-        => IsParentEditing
-            ? !string.Equals(EditValue, OriginalValue, StringComparison.Ordinal)
-            : !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
+    public bool IsOverridden => !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
 
     /// <summary>Whether the owning row is currently in edit mode.</summary>
     public bool IsParentEditing
@@ -89,8 +106,6 @@ public sealed class EditableFieldViewModel : INotifyPropertyChanged
             if (_isParentEditing == value) return;
             _isParentEditing = value;
             OnPropertyChanged();
-            // Switching in/out of edit mode changes which value participates in IsOverridden.
-            OnPropertyChanged(nameof(IsOverridden));
         }
     }
 

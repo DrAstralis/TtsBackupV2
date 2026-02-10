@@ -143,7 +143,25 @@
 
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid Margin="0,2,0,2">
+                                                    <Border Margin="0,2,0,2" Padding="4">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="Transparent" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsUrlGroupStripeA}" Value="True">
+                                                                    <Setter Property="Background" Value="Goldenrod" />
+                                                                </DataTrigger>
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsUrlGroupMember}" Value="True" />
+                                                                        <Condition Binding="{Binding IsUrlGroupStripeA}" Value="False" />
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Background" Value="LightGoldenrodYellow" />
+                                                                </MultiDataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="180" />
                                                             <ColumnDefinition Width="*" />
@@ -209,6 +227,8 @@
                                                             </Button.Style>
                                                         </Button>
                                                     </Grid>
+
+                                                    </Border>
 
                                                     <DataTemplate.Triggers>
                                                         <DataTrigger Binding="{Binding IsParentEditing}" Value="True">
