@@ -284,6 +284,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void WireNode(ObjectTreeNodeViewModel node)
     {
+        node.ConfirmUncheck = ConfirmUncheckNode;
+
         node.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ObjectTreeNodeViewModel.IsChecked))
@@ -296,7 +298,55 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             WireNode(child);
     }
 
-    private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
+    
+    private bool ConfirmUncheckNode(ObjectTreeNodeViewModel node)
+    {
+        // Phase 3 behavior: edits are intent-only and live in the right panel rows.
+        // If the user unselects a node, the corresponding rows will disappear and edits will be lost.
+        if (!SubtreeHasPendingEdits(node))
+            return true;
+
+        var name = string.IsNullOrWhiteSpace(node.Name) ? "(unnamed object)" : node.Name;
+        var msg = $"Unselecting '{name}' will discard pending edits for this object (and any selected children).\n\nContinue?";
+        var result = MessageBox.Show(msg, "Unsaved Changes", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        return result == MessageBoxResult.Yes;
+    }
+
+    private bool SubtreeHasPendingEdits(ObjectTreeNodeViewModel root)
+    {
+        if (IncludedNodes.Count == 0)
+            return false;
+
+        var dirtyGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in IncludedNodes)
+        {
+            if (row.HasOverrides)
+                dirtyGuids.Add(row.Guid);
+        }
+
+        if (dirtyGuids.Count == 0)
+            return false;
+
+        static IEnumerable<ObjectTreeNodeViewModel> Flatten(ObjectTreeNodeViewModel n)
+        {
+            yield return n;
+            foreach (var c in n.Children)
+                foreach (var cc in Flatten(c))
+                    yield return cc;
+        }
+
+        foreach (var n in Flatten(root))
+        {
+            if (dirtyGuids.Contains(n.Guid))
+                return true;
+        }
+
+        return false;
+    }
+
+
+private System.Windows.Threading.DispatcherTimer? _selectionDebounce;
 
     private void DebounceSelectionRefresh()
     {

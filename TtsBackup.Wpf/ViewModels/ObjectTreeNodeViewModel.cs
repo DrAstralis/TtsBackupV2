@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -31,6 +32,13 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
     public bool IsSelectionLocked { get; set; }
 
     public ObservableCollection<ObjectTreeNodeViewModel> Children { get; } = new();
+
+    /// <summary>
+    /// Optional callback used to confirm discarding pending edits when a user unchecks this node.
+    /// Return true to allow the uncheck; false to cancel.
+    /// </summary>
+    public Func<ObjectTreeNodeViewModel, bool>? ConfirmUncheck { get; set; }
+
 
     /// <summary>
     /// True if this node has children.
@@ -117,6 +125,20 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
             }
 
             if (_isChecked == coerced) return;
+
+            // If the user is unchecking this node, confirm discarding any pending edits
+            // for this subtree before we cascade the deselection.
+            if (_isChecked == true && coerced == false)
+            {
+                var allow = ConfirmUncheck?.Invoke(this) ?? true;
+                if (!allow)
+                {
+                    // Re-affirm the existing value so the UI stays checked.
+                    OnPropertyChanged(nameof(IsChecked));
+                    return;
+                }
+            }
+
             _isChecked = coerced;
             OnPropertyChanged();
 
