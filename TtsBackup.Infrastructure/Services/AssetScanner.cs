@@ -168,8 +168,7 @@ public sealed class AssetScanner : IAssetScanner
             var s = (string?)v.Value;
             if (string.IsNullOrWhiteSpace(s)) return;
 
-            // Exclude Tablet URL (website reference; not a game asset).
-            if (IsTabletUrl(v.Path)) return;
+            // Tablet.PageURL is a website reference (warning-only in UI). We still include it in analysis.
 
             if (HttpUrlRegex.IsMatch(s))
             {
@@ -232,13 +231,7 @@ public sealed class AssetScanner : IAssetScanner
         }
     }
 
-    private static bool IsTabletUrl(string tokenPath)
-    {
-        // Typical: "...Tablet.URL"
-        // Keep it conservative: any ".Tablet.URL" segment is excluded.
-        return tokenPath.EndsWith(".Tablet.URL", StringComparison.OrdinalIgnoreCase)
-               || tokenPath.Contains(".Tablet.URL.", StringComparison.OrdinalIgnoreCase);
-    }
+    // Tablet URLs are not excluded (warning-only); no special casing here.
 
     private static void TryAdd(
         ObjectNode node,

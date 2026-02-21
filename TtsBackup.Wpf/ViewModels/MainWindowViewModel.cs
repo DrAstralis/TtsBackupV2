@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -16,12 +18,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IAssetScanner _assetScanner;
 
+    // Session-only acceptance for Tablet selection warning.
+    private readonly HashSet<string> _tabletWarningAcceptedGuids = new(StringComparer.OrdinalIgnoreCase);
+
     private SaveDocument? _currentDocument;
     private JObject? _currentRootToken;
 
     private string _title = "TTS Asset Backup";
     private string _statusText = "Ready.";
     private string _replaceAllUrlBase = string.Empty;
+    private bool _preserveUserEdits = true;
     private string _summaryText = "Open a TTS save file to see its objects.";
     
     private int _assetTotal;
@@ -76,6 +82,17 @@ public ObservableCollection<ObjectTreeNodeViewModel> RootNodes { get; } = new();
         {
             if (_statusText == value) return;
             _statusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool PreserveUserEdits
+    {
+        get => _preserveUserEdits;
+        set
+        {
+            if (_preserveUserEdits == value) return;
+            _preserveUserEdits = value;
             OnPropertyChanged();
         }
     }
@@ -186,6 +203,13 @@ public string SummaryText
             var vm = ConvertNode(node, parent: null, ancestorLocked: false);
             RootNodes.Add(vm);
             WireNode(vm);
+        }
+
+        // Apply per-node Tablet flags once so selection can warn immediately.
+        if (_currentRootToken is not null)
+        {
+            foreach (var root in RootNodes)
+                ApplyTabletFlagsRecursive(root);
         }
 
         RebuildIncludedNodes();
@@ -317,6 +341,8 @@ public string SummaryText
 
     private void WireNode(ObjectTreeNodeViewModel node)
     {
+        node.ConfirmCheck = ConfirmTabletSelection;
+
         node.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ObjectTreeNodeViewModel.IsChecked))
@@ -589,12 +615,89 @@ public string SummaryText
     {
         try
         {
-            return JObject.Parse(rawJson);
+            using var sr = new StringReader(rawJson);
+            using var jr = new JsonTextReader(sr);
+            var token = JToken.ReadFrom(jr);
+            return token as JObject;
         }
         catch
         {
             return null;
         }
+    }
+
+    private void ApplyTabletFlagsRecursive(ObjectTreeNodeViewModel node)
+    {
+        node.HasTabletUrl = NodeHasTabletUrl(node);
+
+        var any = node.HasTabletUrl;
+        foreach (var child in node.Children)
+        {
+            ApplyTabletFlagsRecursive(child);
+            any = any || child.AnyTabletUrl;
+        }
+
+        node.AnyTabletUrl = any;
+    }
+
+    private bool NodeHasTabletUrl(ObjectTreeNodeViewModel node)
+    {
+        if (_currentRootToken is null) return false;
+        if (string.IsNullOrWhiteSpace(node.JsonPath)) return false;
+
+        var token = _currentRootToken.SelectToken(NormalizeJsonPathForSelectToken(node.JsonPath), errorWhenNoMatch: false);
+        if (token is not JObject obj) return false;
+
+        if (obj["Tablet"] is not JObject tabletObj) return false;
+
+        // TTS Tablet has a single URL field: Tablet.PageURL
+        var pageUrl = (string?)tabletObj["PageURL"];
+        return !string.IsNullOrWhiteSpace(pageUrl);
+    }
+
+    private bool ConfirmTabletSelection(ObjectTreeNodeViewModel node)
+    {
+        if (!node.AnyTabletUrl)
+            return true;
+
+        // If every tablet-containing node in this subtree was already accepted this session, allow silently.
+        var tabletGuids = CollectTabletGuids(node);
+        var needsPrompt = tabletGuids.Any(g => !_tabletWarningAcceptedGuids.Contains(g));
+        if (!needsPrompt)
+            return true;
+
+        var result = MessageBox.Show(
+            "This selection includes a Tablet object. Tablet URLs usually point to websites and are not downloadable assets.\n\n" +
+            "No asset backup will occur for Tablet URLs (URL rewrite only).\n\n" +
+            "Press OK to continue or Cancel to abort selection.",
+            "Tablet URL Detected",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.OK)
+            return false;
+
+        foreach (var g in tabletGuids)
+            _tabletWarningAcceptedGuids.Add(g);
+
+        return true;
+    }
+
+    private static List<string> CollectTabletGuids(ObjectTreeNodeViewModel root)
+    {
+        var list = new List<string>();
+
+        void Walk(ObjectTreeNodeViewModel n)
+        {
+            if (n.HasTabletUrl && !string.IsNullOrWhiteSpace(n.Guid))
+                list.Add(n.Guid);
+
+            foreach (var c in n.Children)
+                Walk(c);
+        }
+
+        Walk(root);
+        return list;
     }
 
     
@@ -611,6 +714,9 @@ public string SummaryText
 
             foreach (var f in row.Fields.Where(x => x.IsUrlField))
             {
+                if (PreserveUserEdits && f.IsOverridden)
+                    continue;
+
                 var current = row.IsEditing ? f.EditValue : f.Value;
                 if (string.IsNullOrWhiteSpace(current)) continue;
 

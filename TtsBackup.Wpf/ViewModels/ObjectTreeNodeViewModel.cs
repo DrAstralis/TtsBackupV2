@@ -10,6 +10,8 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
     private bool? _isChecked = false;
     private int _ownUrlCount;
     private int _anyUrlCount;
+    private bool _hasTabletUrl;
+    private bool _anyTabletUrl;
 
     public ObjectTreeNodeViewModel(ObjectTreeNodeViewModel? parent = null)
     {
@@ -38,6 +40,12 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
     /// Return true to allow the uncheck; false to cancel.
     /// </summary>
     public Func<ObjectTreeNodeViewModel, bool>? ConfirmUncheck { get; set; }
+
+    /// <summary>
+    /// Optional callback used to confirm checking this node.
+    /// Return true to allow the check; false to cancel.
+    /// </summary>
+    public Func<ObjectTreeNodeViewModel, bool>? ConfirmCheck { get; set; }
 
 
     /// <summary>
@@ -82,6 +90,30 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
     public bool HasOwnUrls => OwnUrlCount > 0;
     public bool HasAnyUrls => AnyUrlCount > 0;
 
+    /// <summary>True if this object contains a Tablet.PageURL field.</summary>
+    public bool HasTabletUrl
+    {
+        get => _hasTabletUrl;
+        set
+        {
+            if (_hasTabletUrl == value) return;
+            _hasTabletUrl = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>True if this object or any descendant contains a Tablet.PageURL field.</summary>
+    public bool AnyTabletUrl
+    {
+        get => _anyTabletUrl;
+        set
+        {
+            if (_anyTabletUrl == value) return;
+            _anyTabletUrl = value;
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>
     /// Tri-state checkbox: true = selected, false = not selected, null = partially selected.
     /// For locked nodes, this mirrors the nearest selectable ancestor and cannot be toggled.
@@ -125,6 +157,17 @@ public sealed class ObjectTreeNodeViewModel : INotifyPropertyChanged
             }
 
             if (_isChecked == coerced) return;
+
+            // If the user is checking this node, allow the host VM to prompt/confirm.
+            if (_isChecked == false && coerced == true)
+            {
+                var allow = ConfirmCheck?.Invoke(this) ?? true;
+                if (!allow)
+                {
+                    OnPropertyChanged(nameof(IsChecked));
+                    return;
+                }
+            }
 
             // If the user is unchecking this node, confirm discarding any pending edits
             // for this subtree before we cascade the deselection.

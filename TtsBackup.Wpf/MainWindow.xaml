@@ -108,6 +108,10 @@
                                 <TextBox MinWidth="220" Margin="0,0,8,0"
                                          Text="{Binding ReplaceAllUrlBase, UpdateSourceTrigger=PropertyChanged}" />
                                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                                    <CheckBox Content="Preserve user edits"
+                                              IsChecked="{Binding PreserveUserEdits}"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,10,0" />
                                     <Button Content="Replace All URLs"
                                             Margin="0,0,8,0"
                                             Command="{Binding ReplaceAllUrlsCommand}" />
@@ -127,6 +131,16 @@
                             <DataTemplate>
                                 <Border BorderBrush="#DDD" BorderThickness="1" Padding="6"
                                         Margin="{Binding Depth, Converter={StaticResource DepthToMarginConverter}}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="Transparent" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasOverrides}" Value="True">
+                                                    <Setter Property="Background" Value="#E6F2FF" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <StackPanel>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
