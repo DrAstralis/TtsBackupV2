@@ -2,19 +2,20 @@ using TtsBackup.Core.Models;
 
 namespace TtsBackup.Core.Services;
 
-public sealed record UrlRewriteRule(
-    string? GlobalBaseUrl // v1 simple: one base URL; extended later
-);
-
+/// <summary>
+/// Phase 4 contract: plans surgical URL patches (does not mutate JSON).
+/// A separate patcher will apply these instructions to the parsed JToken tree.
+/// </summary>
 public interface IUrlRewriteService
 {
     /// <summary>
-    /// Applies URL rewrite rules to the save JSON and returns the updated JSON.
+    /// Creates a list of URL changes to apply.
+    ///
+    /// Inputs are the scanned assets (already limited to the currently included nodes)
+    /// and the user's rewrite settings.
     /// </summary>
-    Task<string> RewriteAsync(
-        SaveDocument document,
-        SelectionSnapshot selection,
-        UrlRewriteRule rule,
-        IReadOnlyDictionary<string, string> perAssetOverrides, // originalUrl -> newUrl
+    Task<IReadOnlyList<UrlPatchInstruction>> PlanPatchesAsync(
+        IReadOnlyList<AssetReference> assets,
+        UrlRewriteRequest request,
         CancellationToken cancellationToken = default);
 }
