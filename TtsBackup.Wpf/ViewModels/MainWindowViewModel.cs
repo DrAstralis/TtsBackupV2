@@ -28,6 +28,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _statusText = "Ready.";
     private string _replaceAllUrlBase = string.Empty;
     private bool _preserveUserEdits = true;
+    private bool _downloadAssetsEnabled = false;
     private string _summaryText = "Open a TTS save file to see its objects.";
     
     private int _assetTotal;
@@ -93,6 +94,17 @@ public ObservableCollection<ObjectTreeNodeViewModel> RootNodes { get; } = new();
         {
             if (_preserveUserEdits == value) return;
             _preserveUserEdits = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool DownloadAssetsEnabled
+    {
+        get => _downloadAssetsEnabled;
+        set
+        {
+            if (_downloadAssetsEnabled == value) return;
+            _downloadAssetsEnabled = value;
             OnPropertyChanged();
         }
     }

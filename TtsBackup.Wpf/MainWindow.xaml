@@ -103,15 +103,26 @@
                     <!-- Bulk URL / revert tools (Phase 3) -->
                     <Border BorderBrush="#EEE" BorderThickness="1" Padding="8" Margin="0,8,0,0">
                         <StackPanel>
+                            <TextBlock Text="Backup Options" FontWeight="Bold"/>
+                        <CheckBox Content="Download assets"
+          IsChecked="{Binding DownloadAssetsEnabled}" Margin="0,5,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <Border BorderBrush="#EEE" BorderThickness="1" Padding="8" Margin="0,8,0,0">
+                        <StackPanel>
                             <TextBlock Text="Replace URL base for included nodes" FontWeight="Bold" />
-                            <DockPanel Margin="0,6,0,0" LastChildFill="True">
-                                <TextBox MinWidth="220" Margin="0,0,8,0"
-                                         Text="{Binding ReplaceAllUrlBase, UpdateSourceTrigger=PropertyChanged}" />
-                                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                            <TextBox MinWidth="220" Margin="0,6,0,0"
+                                     Text="{Binding ReplaceAllUrlBase, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <DockPanel Margin="0,6,0,0" LastChildFill="False">
+                                <StackPanel Orientation="Vertical" DockPanel.Dock="Left">
                                     <CheckBox Content="Preserve user edits"
                                               IsChecked="{Binding PreserveUserEdits}"
-                                              VerticalAlignment="Center"
-                                              Margin="0,0,10,0" />
+                                              Margin="0,0,0,6" />
+                                    
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Top">
                                     <Button Content="Replace All URLs"
                                             Margin="0,0,8,0"
                                             Command="{Binding ReplaceAllUrlsCommand}" />
